@@ -18,6 +18,31 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.Requ
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>();
 
+// Configuración de Redis y Sesión
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis__ConnectionString")
+    ?? builder.Configuration["Redis:ConnectionString"];
+
+if (!string.IsNullOrEmpty(redisConnectionString))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = "ExamenParcial_";
+    });
+}
+else
+{
+    // Fallback a memoria local distribuida en desarrollo local si no hay Redis levantado
+    builder.Services.AddDistributedMemoryCache();
+}
+
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(20);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
@@ -40,6 +65,8 @@ app.UseRouting();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseSession();
 
 app.MapControllerRoute(
     name: "default",

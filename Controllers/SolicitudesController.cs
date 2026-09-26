@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Examen_Parcial.Data;
 using Examen_Parcial.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 
 namespace Examen_Parcial.Controllers
 {
@@ -12,11 +14,13 @@ namespace Examen_Parcial.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly UserManager<IdentityUser> _userManager;
+        private readonly IDistributedCache _cache;
 
-        public SolicitudesController(ApplicationDbContext context, UserManager<IdentityUser> userManager)
+        public SolicitudesController(ApplicationDbContext context, UserManager<IdentityUser> userManager, IDistributedCache cache)
         {
             _context = context;
             _userManager = userManager;
+            _cache = cache;
         }
 
         public async Task<IActionResult> MisSolicitudes(SolicitudFiltroViewModel model)
@@ -45,41 +49,70 @@ namespace Examen_Parcial.Controllers
                 ModelState.AddModelError("FechaInicio", "La fecha inicio no puede ser mayor que la fecha fin.");
             }
 
-            var query = _context.SolicitudesCredito
-                .Include(s => s.Cliente)
-                .Where(s => s.ClienteId == cliente.Id)
-                .AsQueryable();
+            List<SolicitudCredito>? solicitudesList = null;
+            string cacheKey = $"solicitudes_user_{userId}";
 
-            if (ModelState.IsValid)
+            bool tieneFiltros = model.Estado.HasValue || model.MontoMin.HasValue || model.MontoMax.HasValue || model.FechaInicio.HasValue || model.FechaFin.HasValue;
+
+            if (!tieneFiltros && ModelState.IsValid)
             {
-                if (model.Estado.HasValue)
+                var cachedData = await _cache.GetStringAsync(cacheKey);
+                if (!string.IsNullOrEmpty(cachedData))
                 {
-                    query = query.Where(s => s.Estado == model.Estado.Value);
-                }
-
-                if (model.MontoMin.HasValue)
-                {
-                    query = query.Where(s => s.MontoSolicitado >= model.MontoMin.Value);
-                }
-
-                if (model.MontoMax.HasValue)
-                {
-                    query = query.Where(s => s.MontoSolicitado <= model.MontoMax.Value);
-                }
-
-                if (model.FechaInicio.HasValue)
-                {
-                    query = query.Where(s => s.FechaSolicitud >= model.FechaInicio.Value);
-                }
-
-                if (model.FechaFin.HasValue)
-                {
-                    var fechaFinFinDeDia = model.FechaFin.Value.Date.AddDays(1).AddTicks(-1);
-                    query = query.Where(s => s.FechaSolicitud <= fechaFinFinDeDia);
+                    solicitudesList = JsonSerializer.Deserialize<List<SolicitudCredito>>(cachedData);
                 }
             }
 
-            model.Solicitudes = await query.OrderByDescending(s => s.FechaSolicitud).ToListAsync();
+            if (solicitudesList == null)
+            {
+                var query = _context.SolicitudesCredito
+                    .Include(s => s.Cliente)
+                    .Where(s => s.ClienteId == cliente.Id)
+                    .AsQueryable();
+
+                if (ModelState.IsValid)
+                {
+                    if (model.Estado.HasValue)
+                    {
+                        query = query.Where(s => s.Estado == model.Estado.Value);
+                    }
+
+                    if (model.MontoMin.HasValue)
+                    {
+                        query = query.Where(s => s.MontoSolicitado >= model.MontoMin.Value);
+                    }
+
+                    if (model.MontoMax.HasValue)
+                    {
+                        query = query.Where(s => s.MontoSolicitado <= model.MontoMax.Value);
+                    }
+
+                    if (model.FechaInicio.HasValue)
+                    {
+                        query = query.Where(s => s.FechaSolicitud >= model.FechaInicio.Value);
+                    }
+
+                    if (model.FechaFin.HasValue)
+                    {
+                        var fechaFinFinDeDia = model.FechaFin.Value.Date.AddDays(1).AddTicks(-1);
+                        query = query.Where(s => s.FechaSolicitud <= fechaFinFinDeDia);
+                    }
+                }
+
+                solicitudesList = await query.OrderByDescending(s => s.FechaSolicitud).ToListAsync();
+
+                if (!tieneFiltros && ModelState.IsValid)
+                {
+                    var cacheOptions = new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60)
+                    };
+                    var options = new JsonSerializerOptions { ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles };
+                    await _cache.SetStringAsync(cacheKey, JsonSerializer.Serialize(solicitudesList, options), cacheOptions);
+                }
+            }
+
+            model.Solicitudes = solicitudesList;
             return View(model);
         }
 
@@ -106,6 +139,9 @@ namespace Examen_Parcial.Controllers
             {
                 return Forbid();
             }
+
+            HttpContext.Session.SetInt32("UltimaSolicitudId", solicitud.Id);
+            HttpContext.Session.SetString("UltimaSolicitudMonto", solicitud.MontoSolicitado.ToString("N2"));
 
             return View(solicitud);
         }
@@ -174,6 +210,9 @@ namespace Examen_Parcial.Controllers
 
                 _context.Add(nuevaSolicitud);
                 await _context.SaveChangesAsync();
+
+                string cacheKey = $"solicitudes_user_{userId}";
+                await _cache.RemoveAsync(cacheKey);
 
                 TempData["SuccessMessage"] = "Solicitud de crédito registrada exitosamente con estado Pendiente.";
                 return RedirectToAction(nameof(MisSolicitudes));
