@@ -1,0 +1,104 @@
+@model IEnumerable<Examen_Parcial.Models.SolicitudCredito>
+
+@{
+    ViewData["Title"] = "Panel de Analista de Riesgos";
+}
+
+<h2 class="mb-4">Panel de Evaluación de Solicitudes (Pendientes)</h2>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th>ID Solicitud</th>
+                <th>Fecha</th>
+                <th>Cliente ID</th>
+                <th>Ingresos Mensuales</th>
+                <th>Monto Solicitado</th>
+                <th>Máx. Aprobación (5x)</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model != null && Model.Any())
+            {
+                @foreach (var item in Model)
+                {
+                    var ingresos = item.Cliente?.IngresosMensuales ?? 0;
+                    var maxAprobacion = ingresos * 5;
+                    var superaCincoVeces = item.MontoSolicitado > maxAprobacion;
+
+                    <tr class="@(superaCincoVeces ? "table-warning" : "")">
+                        <td>@item.Id</td>
+                        <td>@item.FechaSolicitud.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@item.ClienteId</td>
+                        <td>S/ @ingresos.ToString("N2")</td>
+                        <td class="fw-bold">S/ @item.MontoSolicitado.ToString("N2")</td>
+                        <td>S/ @maxAprobacion.ToString("N2")</td>
+                        <td>
+                            <div class="d-flex gap-2">
+                                <!-- Botón Aprobar -->
+                                <form asp-action="Aprobar" asp-route-id="@item.Id" method="post" onsubmit="return confirm('¿Está seguro de aprobar esta solicitud?');">
+                                    <button type="submit" class="btn btn-success btn-sm" @(superaCincoVeces ? "disabled" : "") title="@(superaCincoVeces ? "Supera 5x los ingresos mensuales" : "")">
+                                        Aprobar
+                                    </button>
+                                </form>
+
+                                <!-- Botón Rechazar (Modal Trigger) -->
+                                <button type="button" class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalRechazar-@item.Id">
+                                    Rechazar
+                                </button>
+                            </div>
+
+                            <!-- Modal para Rechazar -->
+                            <div class="modal fade" id="modalRechazar-@item.Id" tabindex="-1" aria-labelledby="modalLabel-@item.Id" aria-hidden="true">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <form asp-action="Rechazar" asp-route-id="@item.Id" method="post">
+                                            <div class="modal-header bg-danger text-white">
+                                                <h5 class="modal-title" id="modalLabel-@item.Id">Rechazar Solicitud #@item.Id</h5>
+                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <p>Por favor, especifique el motivo del rechazo de la solicitud:</p>
+                                                <div class="mb-3">
+                                                    <textarea name="motivoRechazo" class="form-control" rows="3" required placeholder="Escriba el motivo aquí..."></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                                <button type="submit" class="btn btn-danger">Confirmar Rechazo</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            }
+            else
+            {
+                <tr>
+                    <td colspan="7" class="text-center text-muted">No existen solicitudes pendientes por evaluar.</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
