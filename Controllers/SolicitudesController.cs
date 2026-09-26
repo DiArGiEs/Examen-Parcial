@@ -109,5 +109,77 @@ namespace Examen_Parcial.Controllers
 
             return View(solicitud);
         }
+
+        public async Task<IActionResult> Crear()
+        {
+            var userId = _userManager.GetUserId(User);
+            var cliente = await _context.Clientes.FirstOrDefaultAsync(c => c.UsuarioId == userId);
+
+            if (cliente == null)
+            {
+                TempData["ErrorMessage"] = "Usted no está registrado como cliente del sistema.";
+                return RedirectToAction(nameof(MisSolicitudes));
+            }
+
+            var model = new SolicitudCrearViewModel
+            {
+                IngresosMensuales = cliente.IngresosMensuales
+            };
+
+            return View(model);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Crear(SolicitudCrearViewModel model)
+        {
+            var userId = _userManager.GetUserId(User);
+            var cliente = await _context.Clientes.FirstOrDefaultAsync(c => c.UsuarioId == userId);
+
+            if (cliente == null)
+            {
+                TempData["ErrorMessage"] = "Usted no está registrado como cliente del sistema.";
+                return RedirectToAction(nameof(MisSolicitudes));
+            }
+
+            model.IngresosMensuales = cliente.IngresosMensuales;
+
+            if (!cliente.Activo)
+            {
+                ModelState.AddModelError(string.Empty, "Su cuenta de cliente se encuentra inactiva. No puede registrar nuevas solicitudes.");
+            }
+
+            var tienePendiente = await _context.SolicitudesCredito
+                .AnyAsync(s => s.ClienteId == cliente.Id && s.Estado == EstadoSolicitud.Pendiente);
+
+            if (tienePendiente)
+            {
+                ModelState.AddModelError(string.Empty, "Ya posee una solicitud de crédito activa en estado Pendiente.");
+            }
+
+            if (model.MontoSolicitado > (cliente.IngresosMensuales * 10))
+            {
+                ModelState.AddModelError("MontoSolicitado", $"El monto solicitado no puede exceder 10 veces sus ingresos mensuales (Máximo permitido: S/ {cliente.IngresosMensuales * 10:N2}).");
+            }
+
+            if (ModelState.IsValid)
+            {
+                var nuevaSolicitud = new SolicitudCredito
+                {
+                    ClienteId = cliente.Id,
+                    MontoSolicitado = model.MontoSolicitado,
+                    FechaSolicitud = DateTime.Now,
+                    Estado = EstadoSolicitud.Pendiente
+                };
+
+                _context.Add(nuevaSolicitud);
+                await _context.SaveChangesAsync();
+
+                TempData["SuccessMessage"] = "Solicitud de crédito registrada exitosamente con estado Pendiente.";
+                return RedirectToAction(nameof(MisSolicitudes));
+            }
+
+            return View(model);
+        }
     }
 }

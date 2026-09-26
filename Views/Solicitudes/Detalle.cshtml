@@ -1,0 +1,45 @@
+@model Examen_Parcial.Models.SolicitudCredito
+
+@{
+    ViewData["Title"] = "Detalle de Solicitud";
+}
+
+<div class="container mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">Detalle de Solicitud #@Model.Id</h4>
+            <a asp-action="MisSolicitudes" class="btn btn-secondary btn-sm">Volver a la lista</a>
+        </div>
+        <div class="card-body">
+            <dl class="row">
+                <dt class="col-sm-4">Monto Solicitado:</dt>
+                <dd class="col-sm-8 font-weight-bold">S/ @Model.MontoSolicitado.ToString("N2")</dd>
+
+                <dt class="col-sm-4">Fecha de Solicitud:</dt>
+                <dd class="col-sm-8">@Model.FechaSolicitud.ToString("dd/MM/yyyy HH:mm:ss")</dd>
+
+                <dt class="col-sm-4">Estado:</dt>
+                <dd class="col-sm-8">
+                    @if (Model.Estado == Examen_Parcial.Models.EstadoSolicitud.Pendiente)
+                    {
+                        <span class="badge bg-warning text-dark fs-6">Pendiente</span>
+                    }
+                    else if (Model.Estado == Examen_Parcial.Models.EstadoSolicitud.Aprobado)
+                    {
+                        <span class="badge bg-success fs-6">Aprobado</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-danger fs-6">Rechazado</span>
+                    }
+                </dd>
+
+                @if (Model.Estado == Examen_Parcial.Models.EstadoSolicitud.Rechazado && !string.IsNullOrEmpty(Model.MotivoRechazo))
+                {
+                    <dt class="col-sm-4 text-danger">Motivo de Rechazo:</dt>
+                    <dd class="col-sm-8 text-danger fw-bold">@Model.MotivoRechazo</dd>
+                }
+            </dl>
+        </div>
+    </div>
+</div>
